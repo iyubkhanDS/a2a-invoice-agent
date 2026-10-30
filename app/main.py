@@ -17,7 +17,7 @@ async def auth_gate(req: Request):
 
 @app.get("/.well-known/agent-card.json")
 async def card(req: Request):
-    return {"name": "A2A Agent", "version": "1.0", "supportedInterfaces": [{"url": str(req.base_url)+"a2a/", "protocolBinding": "HTTP+JSON", "protocolVersion": "1.0"}]}
+    return {"name": "A2A Agent", "version": "1.0", "supportedInterfaces": [{"url": "https://a2a-invoice-agent-f0r3.onrender.com/a2a/", "protocolBinding": "HTTP+JSON", "protocolVersion": "1.0"}]}
 
 @app.post("/a2a/message-send")
 @app.post("/a2a/message:send")
