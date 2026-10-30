@@ -1,6 +1,7 @@
 import uuid
 import json
 import hashlib
+from datetime import datetime
 from fastapi import FastAPI, Request, Response, Depends, HTTPException
 from sqlalchemy.orm import Session
 from app.database import init_db, get_db, TaskRecord, IdempotencyKey
@@ -18,17 +19,18 @@ async def auth_gate(req: Request):
     a = req.headers.get("Authorization")
     if not a or not a.startswith("Bearer "): 
         raise HTTPException(status_code=401, detail="Unauthorized")
-    # SAFE FIX: Splitting to extract the token string without list method conflicts
     parts = a.split(" ")
     return parts[1].strip() if len(parts) > 1 else ""
 
 @app.get("/.well-known/agent-card.json")
 async def card(req: Request):
-    return {
+    # Public Agent Card can return standard application/json, but let's give it the exact spec headers too
+    content = {
         "name": "A2A Agent", 
         "version": "1.0", 
         "supportedInterfaces": [{"url": "https://onrender.com", "protocolBinding": "HTTP+JSON", "protocolVersion": "1.0"}]
     }
+    return Response(content=json.dumps(content), media_type="application/a2a+json")
 
 @app.post("/a2a/message:send")
 async def send(req: Request, p: str = Depends(auth_gate), db: Session = Depends(get_db)):
@@ -36,13 +38,11 @@ async def send(req: Request, p: str = Depends(auth_gate), db: Session = Depends(
     m = b.get("message", {})
     mid = m.get("messageId")
     
-    # 1. Enforce Recursive Idempotency
     ikey = db.query(IdempotencyKey).filter(IdempotencyKey.principal_message_hash == f"{p}:{mid}").first()
     if ikey: 
         return Response(content=ikey.compact_response_blob, media_type="application/a2a+json")
         
     pts = m.get("parts", [])
-    # SAFE FIX: Safely pull out the first actual dictionary element from the list block
     pt = pts[0] if len(pts) > 0 else {}
     mt = pt.get("mediaType")
     
@@ -58,9 +58,10 @@ async def send(req: Request, p: str = Depends(auth_gate), db: Session = Depends(
         db.add(t); db.commit()
         
         res = {"task": {"id": t.id, "contextId": t.context_id, "status": {"state": t.state}, "artifacts": [{"parts": [{"mediaType": "application/vnd.ga5.invoice-action-proposals+json", "data": {"batchId": bid, "proposals": props}}]}], "history": [m]}}
-        db.add(IdempotencyKey(principal_message_hash=f"{p}:{mid}", task_id=t.id, compact_response_blob=json.dumps(res).encode()))
+        response_blob = json.dumps(res)
+        db.add(IdempotencyKey(principal_message_hash=f"{p}:{mid}", task_id=t.id, compact_response_blob=response_blob.encode()))
         db.commit()
-        return res
+        return Response(content=response_blob, media_type="application/a2a+json")
         
     elif mt == "application/vnd.ga5.invoice-action-results+json":
         t = db.query(TaskRecord).filter(TaskRecord.id == m.get("taskId"), TaskRecord.principal == p).first()
@@ -74,7 +75,8 @@ async def send(req: Request, p: str = Depends(auth_gate), db: Session = Depends(
         t.state = "TASK_STATE_COMPLETED"
         t.executions = json.dumps(exs)
         db.commit()
-        return {"id": t.id, "state": t.state, "artifacts": [{"parts": [{"mediaType": "application/vnd.ga5.invoice-action-receipts+json", "data": {"batchId": t.batch_id, "executions": exs}}]}]}
+        res = {"id": t.id, "state": t.state, "artifacts": [{"parts": [{"mediaType": "application/vnd.ga5.invoice-action-receipts+json", "data": {"batchId": t.batch_id, "executions": exs}}]}]}
+        return Response(content=json.dumps(res), media_type="application/a2a+json")
         
     raise HTTPException(status_code=400, detail="Malformed Request")
 
@@ -82,9 +84,11 @@ async def send(req: Request, p: str = Depends(auth_gate), db: Session = Depends(
 async def g_task(tid: str, p: str = Depends(auth_gate), db: Session = Depends(get_db)):
     t = db.query(TaskRecord).filter(TaskRecord.id == tid, TaskRecord.principal == p).first()
     if not t: raise HTTPException(status_code=404)
-    return {"id": t.id, "state": t.state}
+    res = {"id": t.id, "state": t.state}
+    return Response(content=json.dumps(res), media_type="application/a2a+json")
 
 @app.get("/a2a/tasks")
 async def l_tasks(p: str = Depends(auth_gate), db: Session = Depends(get_db)):
     ts = db.query(TaskRecord).filter(TaskRecord.principal == p).all()
-    return {"tasks": [{"id": x.id, "state": x.state} for x in ts]}
+    res = {"tasks": [{"id": x.id, "state": x.state} for x in ts]}
+    return Response(content=json.dumps(res), media_type="application/a2a+json")
