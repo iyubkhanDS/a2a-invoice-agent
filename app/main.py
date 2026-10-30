@@ -51,7 +51,7 @@ async def send(req: Request, p: str = Depends(auth_gate), db: Session = Depends(
         bid = d.get("batchId")
         class Pkg:
             def __init__(self, i, c): self.packageId, self.content = i, c
-        pks = [Pkg(x["packageId"], x["content"]) for x in d.get("packages", [])]
+        pks = [Pkg(x.get("packageId", ""), x.get("content", "")) for x in d.get("packages", [])]
         props = await AIInvoiceWorker.process_batch(bid, pks)
         
         t = TaskRecord(id=str(uuid.uuid4()), principal=p, context_id=str(uuid.uuid4()), batch_id=bid, state="TASK_STATE_INPUT_REQUIRED", proposals=json.dumps(props), history=json.dumps([m]))
