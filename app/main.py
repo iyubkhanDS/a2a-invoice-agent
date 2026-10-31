@@ -26,7 +26,7 @@ async def auth_gate(req: Request):
     if not a or not a.startswith("bearer "):
         raise HTTPException(status_code=401, detail="Unauthorized")
         
-    # 👇 FIX: Safely extract the token without throwing an AttributeError on a list
+    # FIX: Safely extract the token without throwing an AttributeError on a list
     parts = a.split(" ")
     if len(parts) < 2:
         raise HTTPException(status_code=401, detail="Invalid Authorization header format")
