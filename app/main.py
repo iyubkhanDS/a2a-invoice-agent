@@ -12,20 +12,26 @@ def startup():
     init_db()
 
 async def auth_gate(req: Request):
-    # FIX: Standardize lookups using lowercase names to prevent 400 errors
-    a2a_version = req.headers.get("a2a-version")
+    headers_lower = {k.lower(): v for k, v in req.headers.items()}
+    
+    a2a_version = headers_lower.get("a2a-version")
     if a2a_version != "1.0":
         raise HTTPException(status_code=400, detail="Invalid A2A-Version")
         
-    content_type = req.headers.get("content-type", "")
+    content_type = headers_lower.get("content-type", "")
     if req.method == "POST" and "application/a2a+json" not in content_type:
         raise HTTPException(status_code=400, detail="Invalid Content-Type")
         
-    a = req.headers.get("authorization")
-    if not a or not a.startswith("Bearer "):
+    a = headers_lower.get("authorization")
+    if not a or not a.startswith("bearer "):
         raise HTTPException(status_code=401, detail="Unauthorized")
         
-    return a.split(" ")[1].strip()
+    # 👇 FIX: Safely extract the token without throwing an AttributeError on a list
+    parts = a.split(" ")
+    if len(parts) < 2:
+        raise HTTPException(status_code=401, detail="Invalid Authorization header format")
+    return parts[1].strip()
+
 
 
 @app.get("/.well-known/agent-card.json")
